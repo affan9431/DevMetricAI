@@ -78,3 +78,11 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 flask run
+```
+
+### 🔧 Frontend Setup (React + Vite)
+```bash
+cd front-end
+npm install
+npm run dev
+```
