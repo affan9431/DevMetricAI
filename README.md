@@ -6,7 +6,7 @@ DevMetricAI is an AI-powered SaaS platform designed to streamline technical inte
 
 ## 🚀 Live Demo
 
-🔗 [https://devmetricai.netlify.app/app/home](https://devmetricai.netlify.app/app/home)
+🔗 [https://devmetricai.netlify.app/app/home](https://devmetricai.netlify.app)
 
 ---
 
