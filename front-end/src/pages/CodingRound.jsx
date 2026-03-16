@@ -1,19 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
-import CodeMirror from "@uiw/react-codemirror";
-import * as events from "@uiw/codemirror-extensions-events";
-import { javascript } from "@codemirror/lang-javascript";
 import { cpp } from "@codemirror/lang-cpp";
-import { python } from "@codemirror/lang-python";
 import { java } from "@codemirror/lang-java";
-import axios from "../axios";
-import { useNavigate } from "react-router-dom";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import * as events from "@uiw/codemirror-extensions-events";
+import CodeMirror from "@uiw/react-codemirror";
 import { jwtDecode } from "jwt-decode";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "../axios";
 import Spinner from "../component/Spinner";
-import useAntiCheat from "../hooks/useAntiCheat";
 
-import * as tf from "@tensorflow/tfjs";
-import * as faceLandmarksDetection from "@tensorflow-models/face-landmarks-detection";
 import "@tensorflow/tfjs-backend-webgl";
+import * as faceapi from "face-api.js";
 
 const userToken = localStorage.getItem("auth_token");
 const decoded = userToken && jwtDecode(userToken);
@@ -41,6 +39,140 @@ export default function CodingRound() {
   const [countTabSwitch, setCountTabSwitch] = useState(0);
   const videoRef = useRef();
   const [timeInSecond, setTimeInSecond] = useState(45 * 60);
+  const [faceWarningCount, setFaceWarningCount] = useState(0);
+  const detectionInterval = useRef(null);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+      });
+
+      videoRef.current.srcObject = stream;
+    } catch (err) {
+      alert("Camera access is required for this interview.");
+      navigate("/");
+    }
+  };
+
+  const loadModels = async () => {
+    await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+    await faceapi.nets.faceLandmark68Net.loadFromUri("/models");
+  };
+
+  const startFaceMonitoring = () => {
+    detectionInterval.current = setInterval(async () => {
+      if (!videoRef.current) return;
+
+      const detections = await faceapi
+        .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks();
+
+      if (detections.length === 0) {
+        handleFaceWarning("No face detected!");
+      }
+
+      if (detections.length > 1) {
+        handleFaceWarning("Multiple faces detected!");
+      }
+
+      if (detections.length === 1) {
+        const landmarks = detections[0].landmarks;
+
+        const nose = landmarks.getNose();
+
+        if (!nose) {
+          handleFaceWarning("Face not visible properly.");
+        }
+      }
+    }, 3000);
+  };
+
+  const handleFaceWarning = (message) => {
+    setFaceWarningCount((prev) => {
+      const newCount = prev + 1;
+
+      alert(`⚠ ${message}`);
+
+      if (newCount >= 3) {
+        alert("❌ Interview ended due to suspicious activity.");
+        navigate("/");
+      }
+
+      return newCount;
+    });
+  };
+
+  useEffect(() => {
+    const initProctoring = async () => {
+      await loadModels();
+      await startCamera();
+      startFaceMonitoring();
+    };
+
+    initProctoring();
+
+    return () => {
+      if (detectionInterval.current) {
+        clearInterval(detectionInterval.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const enterFullscreen = async () => {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    };
+
+    enterFullscreen();
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        alert("⚠ Exiting fullscreen detected!");
+        navigate("/");
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      alert("⚠ Window resizing detected!");
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseLeave = () => {
+      alert("⚠ Cursor left the exam window!");
+    };
+
+    document.addEventListener("mouseleave", handleMouseLeave);
+
+    return () => document.removeEventListener("mouseleave", handleMouseLeave);
+  }, []);
+
+  useEffect(() => {
+    const checkCamera = setInterval(() => {
+      const stream = videoRef.current?.srcObject;
+
+      if (!stream) {
+        alert("⚠ Camera disconnected!");
+        navigate("/");
+      }
+    }, 5000);
+
+    return () => clearInterval(checkCamera);
+  }, []);
 
   useEffect(() => {
     if (timeInSecond === 0) {
@@ -61,7 +193,7 @@ export default function CodingRound() {
           // Save evaluation ID
           localStorage.setItem(
             "codeEvaluationID",
-            JSON.stringify(res.data.cuurID)
+            JSON.stringify(res.data.cuurID),
           );
 
           alert("✅ Your code has been submitted successfully!");
@@ -69,7 +201,7 @@ export default function CodingRound() {
         } catch (error) {
           console.error("Submission failed:", error);
           alert(
-            "❌ Something went wrong while submitting your code. Please contact support."
+            "❌ Something went wrong while submitting your code. Please contact support.",
           );
         } finally {
           setIsLoading(false);
@@ -155,7 +287,7 @@ export default function CodingRound() {
       eachData.push(requiredData);
     } else {
       const matchData = eachData.find(
-        (data) => data.question === requiredData.question
+        (data) => data.question === requiredData.question,
       );
 
       let index = eachData.indexOf(matchData);
@@ -198,7 +330,7 @@ export default function CodingRound() {
 
       if (countTabSwitch === 1) {
         alert(
-          "⚠️ First Warning: Please remain on this tab to continue your coding test."
+          "⚠️ First Warning: Please remain on this tab to continue your coding test.",
         );
       } else if (countTabSwitch === 2) {
         alert("⚠️ Final Warning: Switching tabs again will end your test.");
@@ -213,79 +345,6 @@ export default function CodingRound() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [countTabSwitch, navigate]);
-
-  // useEffect(() => {
-  //   async function loadModel() {
-  //     const model = await faceLandmarksDetection.load(
-  //       faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
-  //     );
-  //     if (videoRef.current) {
-  //       const detect = async () => {
-  //         const predictions = await model.estimateFaces({
-  //           input: videoRef.current,
-  //         });
-  //         if (predictions.length > 1) {
-  //           setIsCheating(true);
-  //           setWarning("🚨 Multiple faces detected!");
-  //         }
-  //         requestAnimationFrame(detect);
-  //       };
-  //       detect();
-  //     }
-  //   }
-
-  //   if (videoRef.current) {
-  //     navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-  //       videoRef.current.srcObject = stream;
-  //       loadModel();
-  //     });
-  //   }
-  // }, []);
-
-  // useEffect(() => {
-  //   let lastFaceBox = null;
-  //   let idleTimer = null;
-
-  //   async function trackFaceMovement() {
-  //     const model = await faceLandmarksDetection.load(
-  //       faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
-  //     );
-
-  //     const detect = async () => {
-  //       if (videoRef.current) {
-  //         const predictions = await model.estimateFaces({
-  //           input: videoRef.current,
-  //         });
-
-  //         if (predictions.length === 1) {
-  //           const faceBox = predictions[0].boundingBox;
-  //           if (lastFaceBox) {
-  //             const dx = Math.abs(faceBox.topLeft[0] - lastFaceBox.topLeft[0]);
-  //             const dy = Math.abs(faceBox.topLeft[1] - lastFaceBox.topLeft[1]);
-
-  //             if (dx < 10 && dy < 10) {
-  //               // not moving
-  //               if (!idleTimer) {
-  //                 idleTimer = setTimeout(() => {
-  //                   setIsCheating(true);
-  //                   setWarning("🚨 No head movement detected for too long!");
-  //                 }, 15000); // 15s idle limit
-  //               }
-  //             } else {
-  //               clearTimeout(idleTimer);
-  //               idleTimer = null;
-  //             }
-  //           }
-  //           lastFaceBox = faceBox;
-  //         }
-  //       }
-  //       requestAnimationFrame(detect);
-  //     };
-  //     detect();
-  //   }
-
-  //   trackFaceMovement();
-  // }, []);
 
   if (isLoading) return <Spinner message="Ai Review Your Code..." />;
 
@@ -313,7 +372,7 @@ export default function CodingRound() {
                 onChange={(e) =>
                   setSelectedLanguage(
                     languages.find((lang) => lang.value === e.target.value) ||
-                      languages[0]
+                      languages[0],
                   )
                 }
               >
@@ -363,8 +422,13 @@ export default function CodingRound() {
 
         {/* Right Section - Questions */}
         <div className="w-full md:w-1/3 bg-[#0A0A0A] p-6 rounded-lg shadow-lg h-[80vh] overflow-scroll ">
-          <video ref={videoRef} autoPlay muted playsInline className="hidden" />
-
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-48 h-36 rounded-lg border border-gray-700 fixed top-4 right-4"
+          />
           <div className="flex justify-between">
             <h2 className="md:text-2xl font-bold mb-4">
               {questions?.length} Questions
